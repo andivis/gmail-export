@@ -1,5 +1,9 @@
 # gmail export
 
+## Video
+
+https://www.loom.com/share/ee0baba59065404897d75bcb6d27b76d
+
 ## Installation
 
 1. Make sure Python 3.8 or higher and git are installed.
