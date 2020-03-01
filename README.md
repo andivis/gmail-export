@@ -32,20 +32,29 @@
     sudo apt install -y git
     ```
 
-2. Open a terminal/command prompt window. Depending on your system you may need run `pip` instead of `pip3`.
+3. Open a terminal/command prompt window. Run the following command.
 
-```
-git clone (repository url)
-cd (repository name)
-pip3 install -r requirements.txt
-```
+    ```
+    git clone https://github.com/andivis/gmail-export.git
+    ```
+
+4. On Windows you can simply go to the `gmail-export` folder and double click `run-windows.bat`. Otherwise do the following step.
+
+5. Run the following commands in the same terminal/command prompt window you just opened. Depending on your system you may need run `pip` instead of `pip3`.
+
+    ```
+    cd gmail-export
+    pip3 install -r requirements.txt
+    ```
 
 ## Instructions
 
-1. Run `python3 main.py`. Depending on your system you may need run `python main.py` instead.
+1. On Windows you can simply double click `run-windows.bat`. Otherwise do the following step.
+
+2. Run `python3 main.py`. Depending on your system you may need run `python main.py` instead.
 
 ## Options
 
 `user-data/options.ini` accepts the following options:
 
-- `emailsToExport`: What email addresses to export. Default: (blank)
+- `emailsToExport`: The email addresses to export, separated by commas. Default: (blank).
