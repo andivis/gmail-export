@@ -32,7 +32,9 @@ class Main:
 
         # set default options
         self.options = {
+            'outputFile': 'user-data/output/output.csv',
             'emailsToExport': '',
+            'needMetadataOnly': 1
         }
 
         optionsFileName = helpers.getParameter('--optionsFile', False, 'user-data/options.ini')

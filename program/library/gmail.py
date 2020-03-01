@@ -22,18 +22,32 @@ from ..library.helpers import get
 
 class Gmail:
     def export(self, inputRows):
+        emailAddresses = inputRows.split(',')
+
+        queryParts = []
+
+        for emailAddress in emailAddresses:
+            queryParts.append(f'to:{emailAddress.strip()}')
+
+        query = ' OR '.join(queryParts)
+
+        threads = self.searchForThreads(query)
+
+        for threadMetadata in threads:
+            threadId = get(threadMetadata, 'id')
+
+            thread = self.service.users().threads().get(userId='me', id=threadId).execute()
+
+            for message in get(thread, 'messages'):
+                self.outputMessageInformation(message)
+
+    def outputMessageInformation(self, message):
         pass
-    
+
     def getCancelList(self, outputFile):
-        self.service = Gmail.getService()
+        threads = self.searchForThreads(self.options['searchTerm'])
 
-        logging.info(f'Searching for {self.options["searchTerm"]}')
-
-        threads = self.service.users().threads().list(userId='me', q=self.options['searchTerm']).execute()
-
-        logging.info(f'Found {len(get(threads, "threads"))} threads')
-
-        for threadMetadata in get(threads, 'threads'):
+        for threadMetadata in threads:
             threadId = get(threadMetadata, 'id')
 
             thread = self.service.users().threads().get(userId='me', id=threadId).execute()
@@ -49,7 +63,7 @@ class Gmail:
                 continue
 
     def sendReplies(self):
-        self.service = Gmail.getService()
+        self.initialize()
 
         logging.info(f'Searching for {self.options["searchTerm"]}')
 
@@ -140,6 +154,17 @@ class Gmail:
 
         thread = self.service.users().threads().modify(userId='me', id=threadId, body=msg_labels).execute()
 
+    def searchForThreads(self, query):
+        self.initialize()
+        
+        logging.info(f'Searching for {query}')
+
+        threads = self.service.users().threads().list(userId='me', q=query).execute()
+
+        logging.info(f'Found {len(get(threads, "threads"))} threads')
+
+        return get(threads, 'threads')
+
     def whatToSay(self, thread):
         body = helpers.getFile('user-data/input/standard.html')
         body = body.replace('\n', '<br>\n')
@@ -196,9 +221,43 @@ class Gmail:
         
         return result
 
+    def outputMessageInformation(self, message):
+        information = self.getMessageInformation(message)
+
+        self.showMessageInformation(message)
+
+        outputFile = self.options['outputFile']
+
+        helpers.makeDirectory(os.path.dirname(outputFile))
+
+        fields = ['date', 'from', 'from first name', 'from last name', 'to', 'to first name', 'to last name']
+
+        if not os.path.exists(outputFile):
+            printableFields = []
+            
+            for field in fields:
+                printableName = helpers.addBeforeCapitalLetters(field).lower()
+                
+                printableFields.append(printableName)
+            
+            helpers.toFile(','.join(printableFields), outputFile)
+
+        values = []
+
+        for field in fields:
+            values.append(get(information, field))
+
+        # this quotes fields that contain commas
+        helpers.appendCsvFile(values, outputFile)
+    
     def showMessageInformation(self, message):
-        fromAddress = self.getHeader(message, 'From')
-        fromAddress = helpers.findBetween(fromAddress, '<', '>')
+        information = self.getMessageInformation(message)
+
+        print(f'{get(information, "fromAddress")}, {get(information, "date")}, {get(information, "body")[0:50]}')
+
+    def getMessageInformation(self, message):
+        fromInformation = self.getSenderInformation(message, 'From')
+        toInformation = self.getSenderInformation(message, 'To')
 
         internalDate = int(get(message, 'internalDate')) / 1000
         date = datetime.utcfromtimestamp(internalDate)
@@ -206,7 +265,36 @@ class Gmail:
 
         body = self.getBody(message)
 
-        print(f'{fromAddress}, {dateString}, {body[0:50]}')
+        result = {
+            'date': dateString,
+            'from': get(fromInformation, 'emailAddress'),
+            'from first name': get(fromInformation, 'firstName'),
+            'from last name': get(fromInformation, 'lastName'),
+            'to': get(toInformation, 'emailAddress'),
+            'to first name': get(toInformation, 'firstName'),
+            'to last name': get(toInformation, 'lastName'),
+            'body': body
+        }
+
+        return result
+
+    def getSenderInformation(self, message, senderType):
+        value = self.getHeader(message, senderType)
+        
+        emailAddress = helpers.findBetween(value, '<', '>')
+        
+        name = helpers.findBetween(value, '<', '', True)
+        
+        firstName = helpers.findBetween(name, '', ' ')
+        lastName = helpers.getLastAfterSplit(name, ' ', minimumFieldCount=2)
+
+        result = {
+            'emailAddress': emailAddress,
+            'firstName': firstName,
+            'lastName': lastName
+        }
+
+        return result
 
     def getBody(self, message):
         base64String = helpers.getNested(message, ['payload', 'body', 'data'])
@@ -243,20 +331,19 @@ class Gmail:
             for label in labels:
                 print(label['name'])
 
-    @staticmethod
-    def getService():
+    def getService(self):
         # If modifying these scopes, delete the file token.pickle.
         SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
-        """Shows basic usage of the Gmail API.
-        Lists the user's Gmail labels.
-        """
+        if self.scopes:
+            SCOPES = self.scopes
+
         creds = None
         # The file token.pickle stores the user's access and refresh tokens, and is
         # created automatically when the authorization flow completes for the first
         # time.
-        if os.path.exists('token.pickle'):
-            with open('token.pickle', 'rb') as token:
+        if os.path.exists('user-data/token.pickle'):
+            with open('user-data/token.pickle', 'rb') as token:
                 creds = pickle.load(token)
         # If there are no (valid) credentials available, let the user log in.
         if not creds or not creds.valid:
@@ -264,17 +351,31 @@ class Gmail:
                 creds.refresh(Request())
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(
-                    'credentials.json', SCOPES)
+                    'program/resources/credentials.json', SCOPES)
                 creds = flow.run_local_server(port=0)
             # Save the credentials for the next run
-            with open('token.pickle', 'wb') as token:
+            with open('user-data/token.pickle', 'wb') as token:
                 pickle.dump(creds, token)
 
         service = build('gmail', 'v1', credentials=creds, cache_discovery=False)
 
         return service
 
+    def initialize(self):
+        if self.initialized:
+            return
+
+        self.initialized = True
+        
+        self.service = self.getService()
+
     def __init__(self, options):
         self.options = options
+        self.initialized = False
+        self.log = logging.getLogger(get(self.options, 'loggerName'))
+        self.scopes = None
+
+        if get(self.options, 'needMetadataOnly'):
+            self.scopes = ['https://www.googleapis.com/auth/gmail.readonly']
 
         self.replies = helpers.getJsonFile('user-data/input/replies.json')
