@@ -688,3 +688,38 @@ def replaceVariables(string, variables, surround=''):
 
     return result
     
+
+
+def requirementsAreInstalled():
+    result = True
+
+    import distutils.text_file
+    import unittest
+    from pathlib import Path
+
+    import pkg_resources
+
+    """Test that each required package is available."""
+    requirements = distutils.text_file.TextFile(filename='requirements.txt').readlines()
+
+    for requirement in requirements:
+        try:
+            pkg_resources.require(requirement)
+        except:
+            result = False
+            break
+
+    return result
+
+def installRequirements():
+    import subprocess
+    import sys
+
+    installed = requirementsAreInstalled()    
+    
+    if installed:
+        return
+    
+    logging.info('Loading')
+    
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])

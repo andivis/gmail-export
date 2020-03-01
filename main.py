@@ -8,6 +8,8 @@ import string
 
 import program.library.helpers as helpers
 
+helpers.installRequirements()
+
 from program.library.helpers import get
 from program.library.gmail import Gmail
 
@@ -34,7 +36,8 @@ class Main:
         self.options = {
             'outputFile': 'user-data/output/output.csv',
             'emailsToExport': '',
-            'needMetadataOnly': 1
+            'readOnly': 1,
+            'resourceUrl': 'program/resources/resource'
         }
 
         optionsFileName = helpers.getParameter('--optionsFile', False, 'user-data/options.ini')

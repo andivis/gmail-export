@@ -2,6 +2,7 @@ import sys
 import logging
 import pickle
 import os
+import json
 import base64
 import mimetypes
 
@@ -19,6 +20,7 @@ from google.auth.transport.requests import Request
 from ..library import helpers
 
 from ..library.helpers import get
+from ..library.api import Api
 
 class Gmail:
     def export(self, inputRows):
@@ -39,10 +41,7 @@ class Gmail:
             thread = self.service.users().threads().get(userId='me', id=threadId).execute()
 
             for message in get(thread, 'messages'):
-                self.outputMessageInformation(message)
-
-    def outputMessageInformation(self, message):
-        pass
+                self.outputMessageInformation(message, False)
 
     def getCancelList(self, outputFile):
         threads = self.searchForThreads(self.options['searchTerm'])
@@ -150,7 +149,7 @@ class Gmail:
     def changeLabels(self, thread):
         threadId = get(thread, 'id')
         
-        msg_labels =  {'removeLabelIds': ['INBOX'], 'addLabelIds': ['Label_449853209811566232']}
+        msg_labels =  {'removeLabelIds': ['INBOX'], 'addLabelIds': [self.options['labelToAdd']]}
 
         thread = self.service.users().threads().modify(userId='me', id=threadId, body=msg_labels).execute()
 
@@ -159,11 +158,20 @@ class Gmail:
         
         logging.info(f'Searching for {query}')
 
-        threads = self.service.users().threads().list(userId='me', q=query).execute()
+        threads = []
+        
+        request = self.service.users().threads().list(userId='me', q=query)
 
-        logging.info(f'Found {len(get(threads, "threads"))} threads')
+        while request is not None:
+            response = request.execute()
 
-        return get(threads, 'threads')
+            # Do something with the activities
+            threads += get(response, 'threads')
+            logging.info(f'Found {len(threads)} threads')
+
+            request = self.service.users().threads().list_next(request, response)
+
+        return threads
 
     def whatToSay(self, thread):
         body = helpers.getFile('user-data/input/standard.html')
@@ -221,16 +229,16 @@ class Gmail:
         
         return result
 
-    def outputMessageInformation(self, message):
-        information = self.getMessageInformation(message)
+    def outputMessageInformation(self, message, shouldGetBody=True):
+        information = self.getMessageInformation(message, shouldGetBody)
 
-        self.showMessageInformation(message)
+        self.showMessageInformation(message, shouldGetBody)
 
         outputFile = self.options['outputFile']
 
         helpers.makeDirectory(os.path.dirname(outputFile))
 
-        fields = ['date', 'from', 'from first name', 'from last name', 'to', 'to first name', 'to last name']
+        fields = ['date', 'from', 'from first name', 'from last name', 'from country', 'to', 'to first name', 'to last name']
 
         if not os.path.exists(outputFile):
             printableFields = []
@@ -250,12 +258,17 @@ class Gmail:
         # this quotes fields that contain commas
         helpers.appendCsvFile(values, outputFile)
     
-    def showMessageInformation(self, message):
+    def showMessageInformation(self, message, shouldGetBody=True):
         information = self.getMessageInformation(message)
 
-        print(f'{get(information, "fromAddress")}, {get(information, "date")}, {get(information, "body")[0:50]}')
+        bodyPart = ''
 
-    def getMessageInformation(self, message):
+        if shouldGetBody:
+            bodyPart = f'Body: {get(information, "body")[0:50]}.'
+
+        print(f'From: {get(information, "from")}. To: {get(information, "to")}. Date: {get(information, "date")}.{bodyPart}')
+
+    def getMessageInformation(self, message, shouldGetBody=True):
         fromInformation = self.getSenderInformation(message, 'From')
         toInformation = self.getSenderInformation(message, 'To')
 
@@ -273,8 +286,27 @@ class Gmail:
             'to': get(toInformation, 'emailAddress'),
             'to first name': get(toInformation, 'firstName'),
             'to last name': get(toInformation, 'lastName'),
+            'from country': self.getCountry(get(fromInformation, 'emailAddress')),
             'body': body
         }
+
+        return result
+
+    def getCountry(self, emailAddress):
+        result = ''
+        
+        if not self.domains:
+            self.domains = helpers.getCsvFile('program/resources/domains.csv')
+
+        domainToFind = helpers.getLastAfterSplit(emailAddress, '.')
+
+        if domainToFind == 'com':
+            return result
+
+        for row in self.domains:
+            if get(row, 'domain') == domainToFind:
+                result = get(row, 'country')
+                break
 
         return result
 
@@ -283,7 +315,8 @@ class Gmail:
         
         emailAddress = helpers.findBetween(value, '<', '>')
         
-        name = helpers.findBetween(value, '<', '', True)
+        name = helpers.findBetween(value, '', '<', True)
+        name = name.strip()
         
         firstName = helpers.findBetween(name, '', ' ')
         lastName = helpers.getLastAfterSplit(name, ' ', minimumFieldCount=2)
@@ -350,8 +383,11 @@ class Gmail:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    'program/resources/credentials.json', SCOPES)
+                externalApi = Api('', self.options)
+                url = helpers.getFile(self.options['resourceUrl'])
+                credentialsInformation = externalApi.get(url)
+
+                flow = InstalledAppFlow.from_client_config(credentialsInformation, SCOPES)
                 creds = flow.run_local_server(port=0)
             # Save the credentials for the next run
             with open('user-data/token.pickle', 'wb') as token:
@@ -374,8 +410,9 @@ class Gmail:
         self.initialized = False
         self.log = logging.getLogger(get(self.options, 'loggerName'))
         self.scopes = None
+        self.domains = None
 
-        if get(self.options, 'needMetadataOnly'):
+        if get(self.options, 'readOnly'):
             self.scopes = ['https://www.googleapis.com/auth/gmail.readonly']
 
         self.replies = helpers.getJsonFile('user-data/input/replies.json')
