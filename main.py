@@ -26,6 +26,8 @@ class Main:
 
     def cleanUp(self):
         logging.info('Done')
+        
+        input("Press enter to exit...")
 
     def __init__(self):
         helpers.setUpLogging('user-data/logs')
