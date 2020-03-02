@@ -8,8 +8,6 @@ import string
 
 import program.library.helpers as helpers
 
-helpers.installRequirements()
-
 from program.library.helpers import get
 from program.library.gmail import Gmail
 
