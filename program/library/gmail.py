@@ -383,9 +383,12 @@ class Gmail:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                externalApi = Api('', self.options)
-                url = helpers.getFile(self.options['resourceUrl'])
-                credentialsInformation = externalApi.get(url)
+                credentialsInformation = helpers.getJsonFile('user-data/credentials/credentials.json')
+                
+                if not credentialsInformation:
+                    externalApi = Api('', self.options)
+                    url = helpers.getFile(self.options['resourceUrl'])
+                    credentialsInformation = externalApi.get(url)
 
                 flow = InstalledAppFlow.from_client_config(credentialsInformation, SCOPES)
                 creds = flow.run_local_server(port=0)
